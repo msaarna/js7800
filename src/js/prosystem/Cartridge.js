@@ -118,6 +118,9 @@ var cartridge_banksets = false;
 var cartridge_banksets_begin = 0;
 var cartridge_banksets_end = 0;
 var cartridge_halt_banked_ram = false;
+// Header byte 54 bit 7: 8K of RAM at $4000 with A8 undecoded, so each even/odd
+// pair of pages ($4000/$4100, $4200/$4300, ...) is the same RAM
+var cartridge_mirror_ram = false;
 var cartridge_pokey_write_only = false;
 var cartridge_pokey800 = false;
 
@@ -334,6 +337,8 @@ function cartridge_ReadHeader(header) {
     cartridge_pokey_write_only = true;
   }
   cartridge_halt_banked_ram = header[53] & 0x40 ? true : false;
+  // RAM, ROM or bank 6 at $4000 (bits 2-4) win over mirror RAM
+  cartridge_mirror_ram = (header[54] & 0x80) && !(header[54] & 0x1c) ? true : false;
   cartridge_bupchip = false;
 
   // Wii: Updates to header interpretation
@@ -697,6 +702,11 @@ function cartridge_Store() {
       memory_ClearROM(0x4000, 0x4000);
       break;
   }
+
+  if (IsMirrorRam()) {
+    // RAM at $4000 (Memory keeps each mirrored page pair in step)
+    memory_ClearROM(16384, 16384);
+  }
 }
 
 // ----------------------------------------------------------------------------
@@ -880,6 +890,7 @@ function cartridge_Release() {
     cartridge_banksets = false;
     cartridge_pokey_write_only = false;
     cartridge_halt_banked_ram = false;
+    cartridge_mirror_ram = false;
   }
 }
 
@@ -987,6 +998,12 @@ function IsBanksets() {
 
 function IsHaltBankedRam() {
   return cartridge_halt_banked_ram;
+}
+
+// Mirror RAM applies to carts that have nothing else at $4000
+function IsMirrorRam() {
+  return cartridge_mirror_ram && !cartridge_banksets &&
+    (cartridge_type == CARTRIDGE_TYPE_NORMAL || cartridge_type == CARTRIDGE_TYPE_SUPERCART);
 }
 
 function IsSwapButtons() {
@@ -1180,6 +1197,7 @@ export {
   GetRegion,
   IsBanksets,
   IsHaltBankedRam,
+  IsMirrorRam,
   IsPokeyEnabled,
   IsPokey450Enabled,
   IsPokey800Enabled,

@@ -101,6 +101,7 @@ var cartridge_pokey800 = false;
 var cartridge_pokey_write_only = false;
 var cartridge_banksets = false;
 var cartridge_halt_banked_ram = false;
+var cartridge_mirror_ram = false;
 
 var cartridge_flags = 0;
 var cartridge_xm = false;
@@ -483,6 +484,10 @@ function memory_Write(address, data) {
             maria_memory_ram[16384 + (address - 49152)] = data;
           } else {
             memory_ram[address] = data;
+            if (cartridge_mirror_ram && address >= 0x4000 && address < 0x8000) {
+              // Mirror RAM: A8 isn't decoded, so both pages of the pair change
+              memory_ram[address ^ 0x100] = data;
+            }
             if (address >= 8256 && address <= 8447) {
               memory_ram[address - 8192] = data;
             }
@@ -591,6 +596,7 @@ function OnCartridgeLoaded() {
   cartridge_pokey_write_only = Cartridge.IsPokeyWriteOnly();
   cartridge_banksets = Cartridge.IsBanksets();
   cartridge_halt_banked_ram = Cartridge.IsHaltBankedRam();
+  cartridge_mirror_ram = Cartridge.IsMirrorRam();
   cartridge_type = Cartridge.GetType();
 }
 
