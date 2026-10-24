@@ -54,13 +54,6 @@ var sally_address = new Pair();
 //static uint sally_cycles;
 var sally_cycles = 0;
 
-// Whether the last operation resulted in a half cycle. (needs to be taken
-// into consideration by ProSystem when cycle counting). This can occur when
-// a TIA or RIOT are accessed (drops to 1.19Mhz when the TIA or RIOT chips
-// are accessed)
-//bool half_cycle = false;
-var half_cycle = false; // Global
-
 /*
 struct Flag {
   byte C;
@@ -114,7 +107,7 @@ var SALLY_IRQ = {
 
 //static const byte SALLY_CYCLES[256] = { ... }
 var SALLY_CYCLES = [
-  7, 6, 0, 0, 2, 3, 5, 0, 3, 2, 2, 2 /* ANC */, 0, 4, 6, 0, // 0 - 15
+  7, 6, 0, 0, 3 /* NOP zp */, 3, 5, 0, 3, 2, 2, 2 /* ANC */, 0, 4, 6, 0, // 0 - 15
   2, 5, 0, 0, 0, 4, 6, 0, 2, 4, 0, 0, 0, 4, 7, 0, // 16 - 31
   6, 6, 0, 0, 3, 3, 5, 0, 4, 2, 2, 2 /* ANC */, 4, 4, 6, 0, // 32 - 47
   2, 5, 0, 0, 0, 4, 6, 0, 2, 4, 0, 0, 0, 4, 7, 0, // 48 - 63
@@ -125,7 +118,7 @@ var SALLY_CYCLES = [
   2, 6, 0, 0, 3, 3, 3, 0, 2, 0, 2, 0, 4, 4, 4, 0, // 128 - 143
   2, 6, 0, 0, 4, 4, 4, 4 /* SAX */, 2, 5, 2, 0, 0, 5, 0, 0, // 144 - 159
   2, 6, 2, 0, 3, 3, 3, 0, 2, 2, 2, 0, 4, 4, 4, 4 /* LAX abs */, // 160 - 175
-  2, 5, 0, 6 /* LAX */, 4, 4, 4, 0, 2, 4, 2, 0, 4, 4, 4, 0, // 176 - 191
+  2, 5, 0, 5 /* LAX */, 4, 4, 4, 0, 2, 4, 2, 0, 4, 4, 4, 0, // 176 - 191
   2, 6, 0, 0, 3, 3, 5, 0, 2, 2, 2, 2 /* SBX */, 4, 4, 6, 0, // 192 - 207
   2, 5, 0, 0, 0, 4, 6, 0, 2, 4, 0, 0, 0, 4, 7, 0, // 208 - 223
   2, 6, 0, 0, 3, 3, 5, 0, 2, 2, 2, 0, 4, 4, 6, 0, // 222 - 239
@@ -589,9 +582,9 @@ function sally_BRK() {
 
   sally_p |= SALLY_FLAG.I;
   //sally_pc.b.l = memory_ram[SALLY_IRQ.L];
-  sally_pc.setBL(memory_ram[SALLY_IRQ.L]);
+  sally_pc.setBL(memory_Read(SALLY_IRQ.L));
   //sally_pc.b.h = memory_ram[SALLY_IRQ.H];
-  sally_pc.setBH(memory_ram[SALLY_IRQ.H]);
+  sally_pc.setBH(memory_Read(SALLY_IRQ.H));
 }
 
 // ----------------------------------------------------------------------------
@@ -771,25 +764,6 @@ function sally_INY() {
 // JMP
 // ----------------------------------------------------------------------------
 function sally_JMP() {
-  //sally_pc = sally_address;
-  //sally_pc = sally_address.clone();
-  sally_pc.copy(sally_address);
-
-  // Check for known entry point of high score ROM
-//    sally_checkHighScoreSet();
-}
-
-// ----------------------------------------------------------------------------
-// JSR
-// ----------------------------------------------------------------------------
-function sally_JSR() {
-  //sally_pc.w--;
-  sally_pc.wMinusMinus();
-  //sally_Push(sally_pc.b.h);
-  sally_Push(sally_pc.getBH());
-  //sally_Push(sally_pc.b.l);
-  sally_Push(sally_pc.getBL());
-
   //sally_pc = sally_address;
   //sally_pc = sally_address.clone();
   sally_pc.copy(sally_address);
@@ -1334,9 +1308,6 @@ function sally_ExecuteInstruction() {
   };
   */
 
-  // Reset half cycle flag
-  half_cycle = false;
-
   //sally_opcode = memory_Read(sally_pc.w++);
   var opcodeMem = sally_pc.wPlusPlus();
   sally_opcode = memory_Read(opcodeMem);
@@ -1445,8 +1416,12 @@ function sally_ExecuteInstruction() {
       return sally_cycles;
     // l_0x20:
     case 0x20:
-      sally_Absolute();
-      sally_JSR();
+      // Bus order: ADL, push PCH, push PCL, ADH
+      sally_address.setBL(memory_Read(sally_pc.wPlusPlus()));
+      sally_Push(sally_pc.getBH());
+      sally_Push(sally_pc.getBL());
+      sally_address.setBH(memory_Read(sally_pc.getW()));
+      sally_pc.copy(sally_address);
       return sally_cycles;
     //l_0x21:
     case 0x21:
@@ -1457,14 +1432,6 @@ function sally_ExecuteInstruction() {
     case 0x24:
       sally_ZeroPage();
       sally_BIT();
-      // Add a half cycle if RIOT/TIA location is accessed. We only track
-      // INPT4 since it is the only one that is accessed during the lightgun
-      // hit detection loop. This should be extended to take into consideration
-      // all RIOT and TIA accesses.
-      //if (sally_address.w == INPT4) {
-      if (sally_address.getW() == INPT4) {
-        half_cycle = true;
-      }
       return sally_cycles;
     //l_0x25:
     case 0x25:
@@ -2141,6 +2108,7 @@ function sally_ExecuteInstruction() {
       sally_IndirectY();
       sally_LDA();
       sally_TAX();
+      sally_Delay(sally_y);
       return sally_cycles;
     // SAX
     // banksets changes
@@ -2171,9 +2139,10 @@ function sally_ExecuteInstruction() {
       // $04 is an illegal opcode "nop", but technically it's "nop zp",
       // which means the following byte is part of the instruction.
       // Nothing is done with the byte, but the PC counter will advance past
-      // it.
-      sally_pc.wPlusPlus();
-      break;
+      // it. Like any zero page instruction, it reads that address.
+      sally_ZeroPage();
+      memory_Read(sally_address.getW());
+      return sally_cycles;
     case 0x80:
       // Double no-op
       return sally_cycles;
@@ -2421,10 +2390,11 @@ function sally_ExecuteNMI() {
   sally_Push(sally_p);
   sally_p |= SALLY_FLAG.I;
   //sally_pc.b.l = memory_ram[SALLY_NMI.L];
-  sally_pc.setBL(memory_ram[SALLY_NMI.L]);
+  sally_pc.setBL(memory_Read(SALLY_NMI.L));
   //sally_pc.b.h = memory_ram[SALLY_NMI.H];
-  sally_pc.setBH(memory_ram[SALLY_NMI.H]);
+  sally_pc.setBH(memory_Read(SALLY_NMI.H));
   //console.log("Execute NMI: " + (memory_ram[SALLY_NMI.L] | memory_ram[SALLY_NMI.H] << 8))
+  sally_cycles = 7;
   return 7;
 }
 
@@ -2494,8 +2464,10 @@ function GetSallyPC() {
   return sally_pc;
 }
 
-function GetHalfCycle() {
-  return half_cycle;
+// Cycles of the instruction being executed (including page-crossing penalties
+// found so far)
+function GetCycles() {
+  return sally_cycles;
 }
 
 export {
@@ -2503,7 +2475,7 @@ export {
   sally_ExecuteRES as ExecuteRES,
   sally_ExecuteInstruction as ExecuteInstruction,
   sally_ExecuteNMI as ExecuteNMI,
-  GetHalfCycle,
+  GetCycles,
   GetSallyA,
   SetSallyA,
   GetSallyX,

@@ -334,7 +334,7 @@ function pokey_GetRegister(address) {
 
       prev_random_scanline_counter = curr_scanline_counter;
 
-      RANDOM = RANDOM ^ 0xff;
+      RANDOM = (RANDOM ^ 0xff) & 0xff;
       data = RANDOM;
       break;
   }

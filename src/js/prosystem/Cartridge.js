@@ -559,17 +559,6 @@ function cartridge_Load(data, size) {
       cartridge_buffer[offset + 1] = 0xE6; // raz fix
    }
 
-  var crc16 = Crc16(cartridge_buffer.slice((
-    cartridge_size - (16 * 1024)), 
-    cartridge_size - (16 * 1024) + 1024));
-
-   // PPII Hack.
-   console.log("CRC 16: 0x" + crc16.toString(16));
-   if ((crc16 & 0xFFFF) == 0x9e8a) {
-      console.log("Applying Pole Position II hack...");
-      ProSystem.SetMstatAdjust(3);
-   }
-
 
   // Swap hi and lo
   if (cartridge_type == CARTRIDGE_TYPE_ACTIVISION && (
